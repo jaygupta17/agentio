@@ -262,13 +262,11 @@ export function DialogSelectDirectoryV2(props: DialogSelectDirectoryV2Props) {
           scrollbar-width: thin;
         }
       `,
-      // Compat (agentio fork): @pierre/trees≤1.0.0-beta.6 has no
-      // onExpansionChange — lazily load children on selection instead.
-      // Upstream source assumes an unreleased trees API; restore the hook
-      // when the pin advances past it.
+      onExpansionChange(change) {
+        if (change.expanded) void load(change.path, navigation)
+      },
       onSelectionChange(paths) {
         const path = paths.at(-1)
-        if (path) void load(path, navigation)
         setSelected(path ? (policy.selection(root(), path) ?? "") : "")
       },
     })
