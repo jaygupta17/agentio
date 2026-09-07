@@ -2,6 +2,7 @@ import { createMemo, createSignal } from "solid-js"
 import { useSDK } from "@/context/sdk"
 import { useServerSync } from "@/context/server-sync"
 import { useSync } from "@/context/sync"
+import { readSync } from "@/utils/safe-read"
 
 const workspaceBarEnabled = import.meta.env.VITE_OPENCODE_CHANNEL !== "prod"
 
@@ -36,22 +37,29 @@ export function createNewSessionWorkspaceController() {
   const sync = useSync()
   const serverSync = useServerSync()
   const [worktree, setWorktree] = createSignal<string>()
-  const visible = createMemo(() => workspaceBarEnabled && sync().project?.vcs === "git")
+  // agentio fork: every accessor below is transiently undefined mid-bootstrap
+  // (see utils/safe-read). Empty fallbacks keep the session mount alive;
+  // reactivity refills them once bootstrap settles.
+  const visible = createMemo(() => workspaceBarEnabled && readSync(sync)?.project?.vcs === "git")
   const value = createMemo(() =>
     resolveNewSessionWorktree({
       enabled: visible(),
       selected: worktree(),
-      directory: sdk().directory,
-      projectWorktree: sync().project?.worktree,
+      directory: readSync(sdk)?.directory ?? "",
+      projectWorktree: readSync(sync)?.project?.worktree,
     }),
   )
-  const projectRoot = createMemo(() => sync().project?.worktree ?? sdk().directory)
-  const localBranch = createMemo(() => serverSync().child(projectRoot())[0].vcs?.branch)
+  const projectRoot = createMemo(() => readSync(sync)?.project?.worktree ?? readSync(sdk)?.directory ?? "")
+  const localBranch = createMemo(() => {
+    const root = projectRoot()
+    if (!root) return undefined
+    return readSync(serverSync)?.child(root)[0]?.vcs?.branch
+  })
   const branch = createMemo(() =>
     resolveNewSessionBranch({
       worktree: value(),
       local: localBranch(),
-      worktreeBranch: (worktree) => serverSync().child(worktree)[0].vcs?.branch,
+      worktreeBranch: (worktree) => readSync(serverSync)?.child(worktree)[0]?.vcs?.branch,
     }),
   )
 
@@ -60,12 +68,12 @@ export function createNewSessionWorkspaceController() {
       value,
       reset: () => setWorktree(),
       set: (worktree: string) =>
-        setWorktree(normalizeNewSessionWorktree(worktree, sdk().directory, sync().project?.worktree)),
+        setWorktree(normalizeNewSessionWorktree(worktree, readSync(sdk)?.directory ?? "", readSync(sync)?.project?.worktree)),
     },
     project: {
       root: projectRoot,
-      workspaces: () => sync().project?.sandboxes ?? [],
-      git: () => sync().project?.vcs === "git",
+      workspaces: () => readSync(sync)?.project?.sandboxes ?? [],
+      git: () => readSync(sync)?.project?.vcs === "git",
     },
     bar: {
       visible,

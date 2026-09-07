@@ -21,6 +21,7 @@ import { useServerSync } from "@/context/server-sync"
 import { useProviders } from "@/hooks/use-providers"
 import { NEW_SESSION_CONTENT_WIDTH } from "@/pages/session/new-session-layout"
 import { Persist, persisted } from "@/utils/persist"
+import { readSync } from "@/utils/safe-read"
 import type { NewSessionDraftController } from "./new-session-draft-controller"
 import type { NewSessionWorkspaceController } from "./new-session-workspace-controller"
 
@@ -102,13 +103,18 @@ function ProviderTip() {
     Persist.global("new-session.provider-tip"),
     createStore({ dismissedAt: 0 }),
   )
-  const visible = createMemo(
-    () =>
-      serverSync().child(sdk().directory)[0].provider_ready &&
+  // agentio fork: tolerate mid-bootstrap undefined (see utils/safe-read).
+  const visible = createMemo(() => {
+    const sync = readSync(serverSync)
+    const dir = readSync(sdk)?.directory
+    if (!sync || !dir) return false
+    return (
+      sync.child(dir)[0].provider_ready &&
       persistedReady() &&
       providers.paid().length === 0 &&
-      Date.now() - persistedState.dismissedAt >= providerTipDismissalDuration,
-  )
+      Date.now() - persistedState.dismissedAt >= providerTipDismissalDuration
+    )
+  })
   const [ref, setRef] = createSignal<HTMLDivElement>()
   const presence = createPresence({
     show: visible,

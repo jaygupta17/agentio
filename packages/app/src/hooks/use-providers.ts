@@ -21,9 +21,30 @@ export function useProviders(directory: Accessor<string | undefined>) {
   const serverSync = useServerSync()
   const params = useParams()
   const dir = () => (directory ? directory() : decode64(params.dir))
+  // agentio fork: the sync accessor is transiently undefined mid-bootstrap
+  // (project add → bootstrap setStore cascade re-runs the models memo before
+  // sync resolves) and throws with no server stored. Upstream always has a
+  // live sidecar server, so it never guards. Degrade to an empty catalog —
+  // the Cloud tab is the server onboarding, a crash screen is not.
+  const sync = () => {
+    try {
+      return serverSync()
+    } catch {
+      return undefined
+    }
+  }
   const providers = () => {
-    const value = dir()
-    const projectStore = value ? serverSync().child(value)[0] : undefined
+    // agentio fork: dir() reads sdk().directory, which is also transiently
+    // undefined mid-bootstrap (same cascade as sync above).
+    let value: string | undefined
+    try {
+      value = dir()
+    } catch {
+      value = undefined
+    }
+    const current = sync()
+    if (!current) return selectProviderCatalog({ explicit: true, directory: value })
+    const projectStore = value ? current.child(value)[0] : undefined
     if (value)
       return selectProviderCatalog({
         explicit: true,
@@ -34,7 +55,7 @@ export function useProviders(directory: Accessor<string | undefined>) {
       explicit: false,
       directory: value,
       catalog: projectStore && { ready: projectStore.provider_ready, providers: projectStore.provider },
-      global: serverSync().data.provider,
+      global: current.data.provider,
     })
   }
 

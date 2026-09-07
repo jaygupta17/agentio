@@ -8,6 +8,7 @@ import { useSettings } from "@/context/settings"
 import { useProviders } from "@/hooks/use-providers"
 import { resolveDefaultModel } from "@/hooks/provider-catalog"
 import { Persist, persisted } from "@/utils/persist"
+import { readSync } from "@/utils/safe-read"
 import { hasCustomAgent, resolveAgent } from "./local-agent"
 import { cycleModelVariant, getConfiguredAgentVariant, resolveModelVariant } from "./model-variant"
 import { useSDK } from "./sdk"
@@ -63,12 +64,14 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
     const sdk = useSDK()
     const sync = useSync()
     const serverSDK = useServerSDK()
-    const providers = useProviders(() => sdk().directory)
+    const providers = useProviders(() => readSync(sdk)?.directory)
     const models = useModels()
     const settings = useSettings()
 
     const id = createMemo(() => params.id || undefined)
-    const list = createMemo(() => sync().data.agent.filter((item) => item.mode !== "subagent" && !item.hidden))
+    // agentio fork: dir-sync ctx is transiently undefined mid-bootstrap
+    // (see use-providers guard). Degrade to empty until it resolves.
+    const list = createMemo(() => readSync(sync)?.data.agent.filter((item) => item.mode !== "subagent" && !item.hidden) ?? [])
     const agentsVisible = createMemo(() => settings.visibility.customAgents() || hasCustomAgent(list()))
     const connected = createMemo(() => new Set(providers.connected().map((item) => item.id)))
 
@@ -128,14 +131,20 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
     const scope = createMemo<State | undefined>(() => {
       const session = id()
       if (!session) return store.draft ?? store.promoting
-      return saved.session[session] ?? handoff.get(handoffKey(serverSDK().scope, sdk().directory, session))
+      const serverScope = readSync(serverSDK)?.scope
+      const dir = readSync(sdk)?.directory
+      if (!serverScope || !dir) return undefined
+      return saved.session[session] ?? handoff.get(handoffKey(serverScope, dir, session))
     })
 
     createEffect(() => {
       const session = id()
       if (!session) return
+      const dir = readSync(sdk)?.directory
+      const serverScope = readSync(serverSDK)?.scope
+      if (!dir || !serverScope) return
 
-      const key = handoffKey(serverSDK().scope, sdk().directory, session)
+      const key = handoffKey(serverScope, dir, session)
       const next = handoff.get(key)
       if (!next) return
       if (saved.session[session] !== undefined) {
@@ -150,7 +159,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
     })
 
     const configuredModel = () => {
-      const model = resolveDefaultModel(providers.defaultModel(), sync().data.config.model)
+      const model = resolveDefaultModel(providers.defaultModel(), readSync(sync)?.data.config.model)
       if (!model) return
       if (validModel(model)) return model
     }
@@ -373,7 +382,10 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
     }
 
     const result = {
-      slug: createMemo(() => base64Encode(sdk().directory)),
+      slug: createMemo(() => {
+        const dir = readSync(sdk)?.directory
+        return dir ? base64Encode(dir) : ""
+      }),
       model,
       agent,
       session: {
