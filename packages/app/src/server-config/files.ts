@@ -111,6 +111,8 @@ export function resolveConfigDir(absoluteDir: string, roots: ConfigPathRoots): s
 }
 
 export interface JailedConfigFiles {
+  /** True when read/write on this absolute path would pass the jail. */
+  allowed(absolutePath: string): boolean
   read(absolutePath: string): Promise<string>
   write(absolutePath: string, content: string): Promise<void>
   remove(absolutePath: string): Promise<void>
@@ -125,6 +127,14 @@ export function createJailedConfigFiles(
   input: () => ConfigPathRoots,
 ): JailedConfigFiles {
   return {
+    allowed(path) {
+      try {
+        resolveConfigPath(path, input())
+        return true
+      } catch {
+        return false
+      }
+    },
     async read(path) {
       resolveConfigPath(path, input())
       return provider.readFile(sandboxId, path)
@@ -178,3 +188,11 @@ export function editJsoncPath(
   })
   return applyEdits(text, edits)
 }
+
+/**
+ * Global config dir inside the agentio E2B sandbox. Must stay aligned with
+ * boot.sh ($HOME/.config/opencode with the code-interpreter base's user).
+ */
+export const SANDBOX_CONFIG_DIR = "/home/user/.config/opencode"
+/** Workspace root the template's serve instances default under. */
+export const SANDBOX_WORKSPACE_ROOT = "/home/user/workspace"

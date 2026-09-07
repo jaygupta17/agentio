@@ -212,3 +212,20 @@ Log newest first. One line why per decision.
   methods replaced by raw jailed readFile/writeFile/removeFile/existsFile/
   listDir (jail enforced in files.ts, provider stays honest). Deps added
   via catalog: yaml@2.9.0, jsonc-parser@3.3.1. 769 unit / build green.
+
+- 2026-09-07: config-UI phases B+C land. Server config page (/server-config,
+  entry via command palette "Configure server"; providers deep-link button).
+  Scope selector global|project; project scope gated behind file capability
+  with explanation (remote serves can't edit project config — PATCH /config
+  is the dead-write trap). Sections: permissions matrix (ported model,
+  source-only writes), agents+subagents (config keys canonical, optional
+  agents/<name>.md mirror on sandboxes, delete=E2B), commands (inline
+  templates), MCP (forms+live connect/disconnect+status; OAuth deferred v1.1
+  with honest needs_auth banner), skills (HTTP browse everywhere; SKILL.md
+  authoring E2B; paths/urls config everywhere), plugins (whole-array replace
+  = works on every server). Deferred-restart badge drives
+  POST /instance/dispose after file writes only. 101 i18n keys.
+  LIVE-VERIFIED (isolated XDG_CONFIG_HOME serve + real chromium): connect ->
+  page -> set permission -> create agent -> add command -> add MCP ->
+  add plugin; server files + GET /agent|/command|/mcp confirm truth; reload
+  persists; remote banners shown. 768 unit / 41 browser / build green.

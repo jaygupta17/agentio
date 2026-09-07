@@ -945,6 +945,15 @@ export default function LegacyLayout(props: ParentProps) {
         onSelect: () => openSettings(),
       },
       {
+        id: "config.server.open",
+        title: language.t("command.config.server"),
+        category: language.t("command.category.server"),
+        onSelect: () => {
+          dialog.close()
+          navigateWithSidebarReset("/server-config")
+        },
+      },
+      {
         id: "session.previous",
         title: language.t("command.session.previous"),
         category: language.t("command.category.session"),
