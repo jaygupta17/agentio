@@ -20,6 +20,15 @@
 - [x] Port classifyError/redactSecrets from web (SSE fatal-vs-reconnect port deferred to next pass)
 - [x] CORS: bootEnvs filters unsafe origins client-side; boot.sh accepts localhost + native-shell origins
 
+## Config UI (Server configuration page)
+- [x] Phase A: data layer (api, permission model, codecs, jailed files, bindings, reload queue)
+- [x] Phase B: page shell + permissions + agents/subagents + commands + MCP (+ live smoke on isolated serve)
+- [x] Phase C: skills (browse everywhere, CRUD on E2B) + plugins + providers deep-link
+- [ ] Phase D (Jay, real E2B sandbox): agent .md mirror, deletes, SKILL.md authoring,
+      project scope, restart badge → dispose, then GET /agent reflects file edits
+- [ ] Backlog: MCP OAuth round-trip UI, raw JSONC config editor, Playwright regression
+      spec for the config page, project AGENTS.md/rules editor
+
 ## Phase 3 — E2B lifecycle
 - [ ] Restart-serve after FS-only pause (explicit affordance)
 - [ ] AbortSignal + backoff in waitForServeVersion poll
