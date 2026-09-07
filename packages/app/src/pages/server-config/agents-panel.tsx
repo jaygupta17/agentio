@@ -114,7 +114,12 @@ export function AgentsPanel(props: { scope: ConfigScope }) {
     const doc = source.data
     if (!doc) return
     setState("sourceAgents", (doc.agent ?? {}) as Record<string, AgentConfig>)
-    if (state.selected && !state.isNew) setState({ form: formFromConfig(doc.agent?.[state.selected]), baseline: formFromConfig(doc.agent?.[state.selected]) })
+    if (state.selected && !state.isNew) {
+      const loaded = formFromConfig(doc.agent?.[state.selected])
+      // Don't clobber an in-progress edit; only re-sync the baseline.
+      if (JSON.stringify(state.form) === JSON.stringify(state.baseline)) setState("form", loaded)
+      setState("baseline", loaded)
+    }
   })
 
   const resolved = createMemo(() => (agents.data ?? []).filter((a) => !a.hidden).sort((a, b) => a.name.localeCompare(b.name)))

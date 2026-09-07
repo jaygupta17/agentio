@@ -100,7 +100,9 @@ export function McpPanel(props: { scope: ConfigScope }) {
     const raw = (doc.mcp ?? {}) as Record<string, McpConfig | { enabled: boolean }>
     setState("raw", raw)
     if (state.selected && !state.isNew && raw[state.selected]) {
-      setState({ form: formFromConfig(raw[state.selected]), baseline: formFromConfig(raw[state.selected]) })
+      const loaded = formFromConfig(raw[state.selected])
+      if (JSON.stringify(state.form) === JSON.stringify(state.baseline)) setState("form", loaded)
+      setState("baseline", loaded)
     }
   })
 

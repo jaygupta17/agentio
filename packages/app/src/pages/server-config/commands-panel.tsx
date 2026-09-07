@@ -82,7 +82,11 @@ export function CommandsPanel(props: { scope: ConfigScope }) {
       raw[name] = value
     }
     setState({ source, raw })
-    if (state.selected && !state.isNew && source[state.selected]) setState({ form: source[state.selected], baseline: source[state.selected] })
+    if (state.selected && !state.isNew && source[state.selected]) {
+      const loaded = source[state.selected]
+      if (JSON.stringify(state.form) === JSON.stringify(state.baseline)) setState("form", loaded)
+      setState("baseline", loaded)
+    }
   })
 
   const visible = createMemo(() =>
@@ -91,7 +95,7 @@ export function CommandsPanel(props: { scope: ConfigScope }) {
 
   function select(name: string) {
     const entry = state.source[name] ?? toForm(visible().find((c) => c.name === name) ?? {})
-    setState({ selected: name, isNew: false, form: entry, baseline: entry, error: "" })
+    setState({ selected: name, isNew: false, form: entry, baseline: { ...entry }, error: "" })
   }
 
   const save = createMutation(() => ({

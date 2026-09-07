@@ -35,7 +35,7 @@ export const OnboardingScreen: Component = () => {
     mode: "choice" as Mode,
     cloudStep: 0,
     e2bKey: "",
-    password: generatePassword(),
+    password: "",
     keysText: "",
     busy: false,
     progress: "",
@@ -137,7 +137,10 @@ export const OnboardingScreen: Component = () => {
             <button
               type="button"
               class="flex flex-col items-start gap-1 w-full text-left rounded-xl border border-border-weak bg-surface-base p-4 hover:bg-surface-raised-base-hover transition-colors"
-              onClick={() => setStore({ mode: "cloud", cloudStep: 0, error: null })}
+              onClick={() => {
+                setStore({ mode: "cloud", cloudStep: 0, error: null })
+                if (!store.password) setStore("password", generatePassword())
+              }}
             >
               <span class="text-14-medium text-text-strong">{language.t("onboarding.choice.cloud")}</span>
               <span class="text-12-regular text-text-weak">{language.t("onboarding.choice.cloudDescription")}</span>

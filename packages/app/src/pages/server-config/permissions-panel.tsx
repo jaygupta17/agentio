@@ -2,7 +2,7 @@
 // the active scope, writes whole-section replacements through the
 // scope-appropriate service (see write-service.ts for the merge semantics).
 
-import { Show, createEffect } from "solid-js"
+import { Show, createEffect, createMemo } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useLanguage } from "@/context/language"
 import { createMutation, createQuery } from "@tanstack/solid-query"
@@ -65,11 +65,13 @@ export function PermissionsPanel(props: { scope: ConfigScope }) {
   createEffect(() => {
     const doc = config.data
     if (!doc) return
-    const model = parsePermissionConfig(doc.permission)
-    setState({ model, loaded: model })
+    const loaded = parsePermissionConfig(doc.permission)
+    // Never clobber an in-progress edit (background refetches are on by default).
+    if (permissionModelsEqual(state.model, state.loaded)) setState({ model: loaded, loaded })
+    else setState("loaded", loaded)
   })
 
-  const dirty = () => !permissionModelsEqual(state.model, state.loaded)
+  const dirty = createMemo(() => !permissionModelsEqual(state.model, state.loaded))
 
   const save = createMutation(() => ({
     mutationFn: async () => {
