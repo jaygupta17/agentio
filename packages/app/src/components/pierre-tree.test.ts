@@ -1,11 +1,12 @@
 import { expect, test } from "bun:test"
 import { FileTree, type FileTreeDirectoryHandle } from "@pierre/trees"
 
-test("reports directory expansion changes", () => {
-  const changes: Array<{ path: string; expanded: boolean }> = []
+// Compat (agentio fork): @pierre/trees≤1.0.0-beta.6 has no onExpansionChange
+// hook — assert expand/collapse state through the directory handle instead.
+// Upstream test covers the unreleased hook; restore it when the pin advances.
+test("directory handle tracks expansion state", () => {
   const tree = new FileTree({
     paths: ["src/"],
-    onExpansionChange: (change) => changes.push(change),
   })
 
   const src = tree.getItem("src/")
@@ -13,11 +14,8 @@ test("reports directory expansion changes", () => {
   const directory = src as FileTreeDirectoryHandle
 
   directory.expand()
+  expect(directory.isExpanded()).toBe(true)
   directory.collapse()
-
-  expect(changes).toEqual([
-    { path: "src/", expanded: true },
-    { path: "src/", expanded: false },
-  ])
+  expect(directory.isExpanded()).toBe(false)
   tree.cleanUp()
 })
