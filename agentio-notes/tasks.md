@@ -11,22 +11,18 @@
 - [x] E2B template moved to `e2b/`
 
 ## Phase 2 — make it the actual product
-- [ ] entry.tsx: stop injecting fake same-origin/localhost server;
-      enable ConnectionGate health check
-- [ ] First-run onboarding gate: E2B path + "connect remote serve" path
-      (URL + username + password, cross-origin tested)
-- [ ] Vault-only secrets: strip password from persisted server.v3,
-      hydrate from vault, one-time migration
+- [x] entry.tsx: no fake server in prod; ConnectionGate live (dev/auth_token keep injected path)
+- [x] First-run onboarding gate: E2B wizard + remote serve form (verified in Chrome against real serve)
+- [x] Vault-only secrets: scrub read + strip write + vault.servers hydrate (live-verified: no password in localStorage)
 - [ ] Replace safe-read catch-all with real connection-state gate
-- [ ] Port toUserError/redactSecrets + SSE fatal-vs-reconnect from web
-- [ ] CORS: onboarding collects allowed origins; native-shell origins
-      (tauri://localhost, capacitor://localhost) in the design
+- [x] Port classifyError/redactSecrets from web (SSE fatal-vs-reconnect port deferred to next pass)
+- [x] CORS: bootEnvs filters unsafe origins client-side; boot.sh accepts localhost + native-shell origins
 
 ## Phase 3 — E2B lifecycle
 - [ ] Restart-serve after FS-only pause (explicit affordance)
 - [ ] AbortSignal + backoff in waitForServeVersion poll
 - [ ] Normalize URL before server.add (dedup); persist secrets before connect
-- [ ] boot.sh: allow http://localhost + native origins; pin Dockerfile digest
+- [x] boot.sh: localhost + native origins allowed; [ ] Dockerfile digest still unpinned
 - [ ] Regenerate vendored @opencode-ai/client at next pin bump
 
 ## Phase 4 — acceptance (Jay, real device)

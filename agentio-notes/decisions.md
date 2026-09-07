@@ -172,3 +172,18 @@ Log newest first. One line why per decision.
   deps now match the pinned build contract.
 - 2026-09-07: E2B template + boot.sh landed at `e2b/` (verbatim from
   app/template; CORS/localhost + digest-pin fixes scheduled in Phase 3).
+
+- 2026-09-07: phase 2 lands — first-run onboarding + vault-only secrets,
+  live-verified against a real serve@source in Chrome. Found + fixed root
+  cause of "launcher shows nothing with no server": createSimpleContext
+  gate (ui/context/helper.tsx) never opens when ServerProvider.ready() is
+  false and ready() required a non-empty active key; empty list is now a
+  terminal (onboarding) state. Passwords stripped from persisted server.v3
+  (scrub on read + on write), credentials live only in the AES-GCM vault
+  `servers` map and hydrate in-memory at boot; manual dialog + Cloud tab
+  persist the vault BEFORE mutating the store. Shared src/e2b/provision.ts
+  (parseKeys/bootEnvs/connectServe/createAndBoot) + classified+redacted
+  errors (e2b/errors.ts). entry.tsx: no fake server in prod, health gate
+  live; dev/auth_token keep injected+unhealthy-skipped path so upstream
+  e2e semantics hold. boot.sh now accepts localhost + tauri://localhost +
+  capacitor://localhost origins. 747 unit / 41 browser / build green.

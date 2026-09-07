@@ -378,8 +378,11 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       })
     }
 
+    // An empty server list is a legitimate terminal state for the agentio
+    // launcher (first-run onboarding), so the context gate must open for it —
+    // NoServerGate owns what renders when there is nothing to activate.
     const isReady = Object.assign(
-      createMemo(() => ready() && !!state.active),
+      createMemo(() => ready() && (!!state.active || allServers().length === 0)),
       { promise: ready.promise },
     )
 
