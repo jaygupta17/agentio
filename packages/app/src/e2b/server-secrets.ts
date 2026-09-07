@@ -3,6 +3,7 @@
 // AES-GCM device vault (vault.ts `servers` map) and are merged into the
 // in-memory connections at boot. localStorage never sees a password.
 import { loadVault, updateVault, type VaultServerCreds } from "./vault"
+import { setServerBinding } from "@/server-config/binding"
 
 export async function loadServerSecrets(): Promise<Record<string, VaultServerCreds>> {
   const vault = await loadVault().catch(() => null)
@@ -12,9 +13,11 @@ export async function loadServerSecrets(): Promise<Record<string, VaultServerCre
 export function serverSecretStore() {
   return {
     save(url: string, creds: VaultServerCreds) {
+      setServerBinding(url, creds.sandboxId)
       return updateVault((v) => ({ ...v, servers: { ...v.servers, [url]: creds } }))
     },
     remove(url: string) {
+      setServerBinding(url, undefined)
       return updateVault((v) => {
         const servers = { ...v.servers }
         delete servers[url]

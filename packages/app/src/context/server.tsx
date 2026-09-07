@@ -15,6 +15,9 @@ type ServerProjectState = {
 export interface ServerHttpCreds {
   username?: string
   password: string
+  /** not used for auth — travels with the credential so file-capability
+   * lookups (E2B) survive reloads without a second store */
+  sandboxId?: string
 }
 // Secret persistence seam (agentio): when provided, passwords never enter the
 // localStorage snapshot — they live behind this interface (vault-backed) and

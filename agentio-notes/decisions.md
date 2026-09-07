@@ -192,3 +192,23 @@ Log newest first. One line why per decision.
   authenticated local serve (vite preview 4173 -> connect -> app shell,
   persists across reload). localhost origins pass v1.18.27 CORS defaults;
   non-localhost launchers still need AGENTIO_CORS_ORIGINS at boot.
+
+- 2026-09-07: config-UI phase A (data layer). Live-verified on v1.18.27:
+  instance PATCH /config writes <dir>/config.json that the loader NEVER
+  reads (dead write, upstream dev still) → project-scope writes go through
+  E2B files only; global PATCH /global/config works and auto-disposes;
+  remeda mergeDeep + JSON can't delete keys → delete = jsonc file edit
+  (E2B) or disable-shape (remote). GET /skill real shape {name,
+  description?, location, content}; PUT/DELETE /auth/:id live. New
+  src/server-config/: api.ts (typed seam over sdk client incl
+  client.global.config / app.skills / mcp.*), permissions.ts (ported
+  OpenChamber model: source-vs-resolved never written back), codecs.ts
+  (agent/command/SKILL.md frontmatter matching the server's own parsers —
+  body prompt wins over inline key, verified vs config/agent.ts),
+  files.ts (path jail + comment-preserving jsonc edits; jail pure-tested),
+  binding.ts (sandboxId now travels in vault server creds → file-capable
+  detection survives reload), reload.ts (deferred-restart queue for file
+  writes only; PATCH flows self-dispose). cloud.ts: markdown-scoped
+  methods replaced by raw jailed readFile/writeFile/removeFile/existsFile/
+  listDir (jail enforced in files.ts, provider stays honest). Deps added
+  via catalog: yaml@2.9.0, jsonc-parser@3.3.1. 769 unit / build green.

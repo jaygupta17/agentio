@@ -11,6 +11,9 @@
 export interface VaultServerCreds {
   username?: string
   password: string
+  /** E2B sandbox this serve URL belongs to (enables the file-backed
+   * config features; absent for manually connected servers). */
+  sandboxId?: string
 }
 
 export interface VaultSecrets {
@@ -163,8 +166,14 @@ export async function loadVault(
       for (const [url, creds] of Object.entries(o.servers as Record<string, unknown>)) {
         if (!creds || typeof creds !== "object") continue
         const c = creds as Record<string, unknown>
-        if (typeof c.password !== "string" || !c.password) continue
-        servers[url] = { password: c.password, ...(typeof c.username === "string" && c.username ? { username: c.username } : {}) }
+        if (typeof c.password !== "string" && c.password !== undefined) continue
+        const sandboxId = typeof c.sandboxId === "string" && c.sandboxId ? c.sandboxId : undefined
+        if (!c.password && !sandboxId) continue
+        servers[url] = {
+          password: typeof c.password === "string" ? c.password : "",
+          ...(typeof c.username === "string" && c.username ? { username: c.username } : {}),
+          ...(typeof c.sandboxId === "string" && c.sandboxId ? { sandboxId: c.sandboxId } : {}),
+        }
       }
     }
     return {

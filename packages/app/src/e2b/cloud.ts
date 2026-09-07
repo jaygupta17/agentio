@@ -45,35 +45,16 @@ export interface CloudProvider {
    */
   startServe(sandboxId: string, envs: Record<string, string>): Promise<void>
   /**
-   * Direct workspace file access (E2B files API — opencode serve exposes no
-   * write endpoint in v1.18.27). Scoped to `<workspace>/.opencode/` markdown
-   * ONLY; anything else throws before any network call. Powers agent/skill/
-   * command .md authoring that PATCH /config cannot express.
+   * Raw sandbox filesystem access (E2B files API — opencode serve exposes no
+   * file write in v1.18.27). NEVER call with user-supplied paths: the jail
+   * lives in server-config/files.ts (resolveConfigPath), which every UI flow
+   * goes through before reaching this provider.
    */
-  listMarkdownDir(sandboxId: string, workspaceDir: string, relPath: string): Promise<WorkspaceFile[]>
-  readMarkdownFile(sandboxId: string, workspaceDir: string, relPath: string): Promise<string>
-  writeMarkdownFile(sandboxId: string, workspaceDir: string, relPath: string, content: string): Promise<void>
-}
-
-/**
- * Resolve a workspace-relative path and confine it to .opencode/ markdown.
- * Pure — tested. Rejects absolute paths, traversal, non-.md, and anything
- * outside the .opencode tree.
- */
-export function resolveMarkdownDir(workspaceDir: string, relPath: string): string {
-  const clean = relPath.split("/").filter((s) => s && s !== ".")
-  if (clean.some((s) => s === "..")) throw new Error(`refusing traversal: ${relPath}`)
-  if (clean[0] !== ".opencode") throw new Error(`confined to .opencode/: ${relPath}`)
-  const root = workspaceDir.replace(/\/$/, "")
-  if (!root.startsWith("/")) throw new Error(`workspace must be absolute: ${workspaceDir}`)
-  return clean.length === 1 ? `${root}/${clean[0]}` : `${root}/${clean.join("/")}`
-}
-
-export function resolveMarkdownPath(workspaceDir: string, relPath: string): string {
-  const full = resolveMarkdownDir(workspaceDir, relPath)
-  const last = full.slice(full.lastIndexOf("/") + 1)
-  if (!last.endsWith(".md")) throw new Error(`markdown only: ${relPath}`)
-  return full
+  readFile(sandboxId: string, absolutePath: string): Promise<string>
+  writeFile(sandboxId: string, absolutePath: string, content: string): Promise<void>
+  removeFile(sandboxId: string, absolutePath: string): Promise<void>
+  existsFile(sandboxId: string, absolutePath: string): Promise<boolean>
+  listDir(sandboxId: string, absolutePath: string): Promise<WorkspaceFile[]>
 }
 
 export function createE2BProvider(apiKey: string): CloudProvider {
@@ -109,29 +90,31 @@ export function createE2BProvider(apiKey: string): CloudProvider {
       const sbx = await Sandbox.connect(sandboxId, opts)
       await sbx.commands.run("/opt/agentio/boot.sh", { background: true, envs })
     },
-    listMarkdownDir: async (sandboxId: string, workspaceDir: string, relPath: string) => {
-      const dir = resolveMarkdownDir(workspaceDir, relPath || ".opencode")
+    readFile: async (sandboxId: string, absolutePath: string) => {
       const { Sandbox } = await e2b()
       const sbx = await Sandbox.connect(sandboxId, opts)
-      const entries = await sbx.files.list(dir)
+      return sbx.files.read(absolutePath)
+    },
+    writeFile: async (sandboxId: string, absolutePath: string, content: string) => {
+      const { Sandbox } = await e2b()
+      const sbx = await Sandbox.connect(sandboxId, opts)
+      await sbx.files.write(absolutePath, content)
+    },
+    removeFile: async (sandboxId: string, absolutePath: string) => {
+      const { Sandbox } = await e2b()
+      const sbx = await Sandbox.connect(sandboxId, opts)
+      await sbx.files.remove(absolutePath)
+    },
+    existsFile: async (sandboxId: string, absolutePath: string) => {
+      const { Sandbox } = await e2b()
+      const sbx = await Sandbox.connect(sandboxId, opts)
+      return sbx.files.exists(absolutePath)
+    },
+    listDir: async (sandboxId: string, absolutePath: string) => {
+      const { Sandbox } = await e2b()
+      const sbx = await Sandbox.connect(sandboxId, opts)
+      const entries = await sbx.files.list(absolutePath)
       return entries.map((e) => ({ name: e.name, path: e.path, isDir: e.type === "dir" }))
-    },
-    readMarkdownFile: async (sandboxId: string, workspaceDir: string, relPath: string) => {
-      const full = resolveMarkdownPath(workspaceDir, relPath)
-      const { Sandbox } = await e2b()
-      const sbx = await Sandbox.connect(sandboxId, opts)
-      return sbx.files.read(full)
-    },
-    writeMarkdownFile: async (
-      sandboxId: string,
-      workspaceDir: string,
-      relPath: string,
-      content: string,
-    ) => {
-      const full = resolveMarkdownPath(workspaceDir, relPath)
-      const { Sandbox } = await e2b()
-      const sbx = await Sandbox.connect(sandboxId, opts)
-      await sbx.files.write(full, content)
     },
   }
 }

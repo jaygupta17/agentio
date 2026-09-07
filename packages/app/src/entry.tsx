@@ -11,6 +11,7 @@ import { dict as zh } from "@/i18n/zh"
 import { authFromToken } from "@/utils/server"
 import { OnboardingScreen } from "@/components/onboarding"
 import { loadServerSecrets, serverSecretStore } from "@/e2b/server-secrets"
+import { initServerBindings } from "@/server-config/binding"
 import pkg from "../package.json"
 import { ServerConnection } from "./context/server"
 
@@ -164,6 +165,7 @@ if (root instanceof HTMLElement) {
         ...(auth ?? {}),
       },
     }
+    initServerBindings(secrets)
     const savedDefault = readDefaultServerUrl()
     const secretStore = serverSecretStore()
     render(

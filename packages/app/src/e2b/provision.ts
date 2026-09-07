@@ -79,6 +79,7 @@ export async function connectServe(input: {
   username?: string
   password?: string
   displayName?: string
+  sandboxId?: string
   persistSecrets?: () => Promise<void>
   fetch?: typeof globalThis.fetch
   checkHealth?: (http: ServerConnection.HttpBase) => Promise<{ healthy: boolean; version?: string }>
@@ -94,7 +95,13 @@ export async function connectServe(input: {
     ((http) => checkServerHealth(http, input.fetch ?? globalThis.fetch)))(conn.http)
   if (!health.healthy) return { ok: false, error: { key: "e2b.error.unreachable" } }
   if (input.persistSecrets) await input.persistSecrets()
-  if (input.password) await input.server.saveSecret(normalized, { username: input.username, password: input.password })
+  if (input.password || input.sandboxId) {
+    await input.server.saveSecret(normalized, {
+      username: input.username,
+      password: input.password ?? "",
+      ...(input.sandboxId ? { sandboxId: input.sandboxId } : {}),
+    })
+  }
   input.server.add(conn)
   return { ok: true, version: health.version }
 }
