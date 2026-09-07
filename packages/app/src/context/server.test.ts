@@ -6,6 +6,7 @@ import {
   migrateCanonicalLocalServerState,
   nextServerAfterRemoval,
   resolveServerList,
+  scrubStoredServerSecrets,
   ServerConnection,
 } from "./server"
 import { ServerScope } from "@/utils/server-scope"
@@ -241,5 +242,62 @@ describe("migrateCanonicalLocalServerState", () => {
       },
       lastProject: { local: "/local" },
     })
+  })
+})
+
+describe("resolveServerList with a vault secret map", () => {
+  test("merges credentials only into connections lacking a password", () => {
+    const list = resolveServerList({
+      stored: [
+        { type: "http", http: { url: "https://a.test", username: "opencode" } },
+        "https://b.test",
+      ],
+      secrets: {
+        "https://a.test": { password: "pa" },
+        "https://b.test": { username: "u", password: "pb" },
+        "https://unused.test": { password: "x" },
+      },
+    })
+    const [a, b] = list
+    expect(a?.type === "http" && a.http).toEqual({ url: "https://a.test", username: "opencode", password: "pa" })
+    expect(b?.type === "http" && b.http).toEqual({ url: "https://b.test", username: "u", password: "pb" })
+  })
+
+  test("inline credentials (auth_token handoff) win over stored vault values", () => {
+    const list = resolveServerList({
+      props: [
+        {
+          type: "http",
+          http: { url: "https://a.test", username: "startup", password: "startup-pass" },
+        },
+      ],
+      stored: [{ type: "http", http: { url: "https://a.test", username: "opencode" } }],
+      secrets: { "https://a.test": { password: "vault-pass" } },
+    })
+    expect(list[0]?.http.password).toBe("startup-pass")
+  })
+})
+
+describe("scrubStoredServerSecrets", () => {
+  test("strips plaintext passwords from both stored entry shapes", () => {
+    const scrubbed = scrubStoredServerSecrets({
+      list: [
+        { type: "http", http: { url: "https://a.test", username: "opencode", password: "leak" } },
+        { url: "https://b.test", password: "leak2" },
+        "https://c.test",
+        { type: "http", http: { url: "https://d.test" } },
+      ],
+      projects: {},
+    }) as { list: unknown[] }
+    expect(scrubbed.list[0]).toEqual({ type: "http", http: { url: "https://a.test", username: "opencode" } })
+    expect(scrubbed.list[1]).toEqual({ url: "https://b.test" })
+    expect(scrubbed.list[2]).toBe("https://c.test")
+    expect(scrubbed.list[3]).toEqual({ type: "http", http: { url: "https://d.test" } })
+    expect(JSON.stringify(scrubbed)).not.toContain("leak")
+  })
+
+  test("passes non-record values through", () => {
+    expect(scrubStoredServerSecrets(null)).toBe(null)
+    expect(scrubStoredServerSecrets({ list: "nope" })).toEqual({ list: "nope" })
   })
 })

@@ -8,6 +8,11 @@
 // localStorage dumps) — not a compromised page. XSS discipline (no
 // innerHTML, text-only rendering, CSP) is the other half.
 
+export interface VaultServerCreds {
+  username?: string
+  password: string
+}
+
 export interface VaultSecrets {
   /** opencode serve Basic password (per-device generated) */
   password: string
@@ -15,9 +20,12 @@ export interface VaultSecrets {
   e2bKey: string
   /** provider -> API key, e.g. {anthropic: "sk-..."} */
   llmKeys: Record<string, string>
+  /** serve Basic credentials per saved server URL (the only secret home
+   * for persisted servers — never localStorage) */
+  servers: Record<string, VaultServerCreds>
 }
 
-export const EMPTY_VAULT: VaultSecrets = { password: "", e2bKey: "", llmKeys: {} }
+export const EMPTY_VAULT: VaultSecrets = { password: "", e2bKey: "", llmKeys: {}, servers: {} }
 
 export interface VaultBackend {
   get(key: string): Promise<unknown>
@@ -150,6 +158,15 @@ export async function loadVault(
     const parsed: unknown = JSON.parse(new TextDecoder().decode(plain))
     if (!parsed || typeof parsed !== "object") return null
     const o = parsed as Record<string, unknown>
+    const servers: Record<string, VaultServerCreds> = {}
+    if (o.servers && typeof o.servers === "object") {
+      for (const [url, creds] of Object.entries(o.servers as Record<string, unknown>)) {
+        if (!creds || typeof creds !== "object") continue
+        const c = creds as Record<string, unknown>
+        if (typeof c.password !== "string" || !c.password) continue
+        servers[url] = { password: c.password, ...(typeof c.username === "string" && c.username ? { username: c.username } : {}) }
+      }
+    }
     return {
       password: typeof o.password === "string" ? o.password : "",
       e2bKey: typeof o.e2bKey === "string" ? o.e2bKey : "",
@@ -161,10 +178,25 @@ export async function loadVault(
               ),
             )
           : {},
+      servers,
     }
   } catch {
     return null
   }
+}
+
+/**
+ * Read-modify-write the vault in one step. Whole-record saves must go through
+ * here (or build on a fresh load) so concurrent writers — e.g. the Cloud tab
+ * remembering keys while a connect stores server creds — don't clobber each
+ * other's fields.
+ */
+export async function updateVault(
+  fn: (secrets: VaultSecrets) => VaultSecrets,
+  backend: VaultBackend = idbBackend(),
+): Promise<void> {
+  const current = (await loadVault(backend)) ?? EMPTY_VAULT
+  await saveVault(fn(current), backend)
 }
 
 export async function clearVault(

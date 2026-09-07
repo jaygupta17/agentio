@@ -273,6 +273,7 @@ export function useServerManagementController(options: { onSelect?: () => void; 
       }
 
       resetAdd()
+      if (conn.http.password) await server.saveSecret(normalized, { username: conn.http.username, password: conn.http.password })
       if (options.navigateOnAdd === false) {
         server.add(conn)
         options.onSelect?.()
@@ -322,6 +323,7 @@ export function useServerManagementController(options: { onSelect?: () => void; 
         setStore("editServer", { error: language.t("dialog.server.add.error") })
         return
       }
+      if (password) await server.saveSecret(normalized, { username, password })
       if (normalized === input.original.http.url) {
         server.add(conn)
       } else {

@@ -1,5 +1,5 @@
 import { createSimpleContext } from "@opencode-ai/ui/context"
-import { type Accessor, batch, createMemo } from "solid-js"
+import { type Accessor, batch, createEffect, createMemo } from "solid-js"
 import { createStore, type SetStoreFunction, type Store } from "solid-js/store"
 import { Persist, persisted } from "@/utils/persist"
 import { pathKey } from "@/utils/path-key"
@@ -11,6 +11,18 @@ type ServerProjectState = {
   projects: Record<string, StoredProject[]>
   lastProject: Record<string, string>
   recentlyClosed: Record<string, string[]>
+}
+export interface ServerHttpCreds {
+  username?: string
+  password: string
+}
+// Secret persistence seam (agentio): when provided, passwords never enter the
+// localStorage snapshot — they live behind this interface (vault-backed) and
+// are merged into connections in memory at boot.
+export interface ServerSecrets {
+  initial: Record<string, ServerHttpCreds>
+  save(url: string, creds: ServerHttpCreds): Promise<void>
+  remove(url: string): Promise<void>
 }
 const HEALTH_POLL_INTERVAL_MS = 10_000
 // The store retains more history than is displayed. Consumers filter recently closed entries
@@ -148,6 +160,7 @@ export function createServerProjects<T extends ServerProjectState>(input: {
 export function resolveServerList(input: {
   props?: Array<ServerConnection.Any>
   stored: StoredServer[]
+  secrets?: Record<string, ServerHttpCreds | undefined>
 }): Array<ServerConnection.Any> {
   const deduped = new Map<ServerConnection.Key, ServerConnection.Any>(
     input.props?.map((v) => [ServerConnection.key(v), v]) ?? [],
@@ -175,7 +188,32 @@ export function resolveServerList(input: {
     else deduped.set(key, conn)
   }
 
-  return [...deduped.values()]
+  if (!input.secrets) return [...deduped.values()]
+  return [...deduped.values()].map((conn) => {
+    if (conn.type !== "http" || conn.http.password) return conn
+    const cred = input.secrets![ServerConnection.key(conn)]
+    if (!cred) return conn
+    return {
+      ...conn,
+      http: { ...conn.http, username: conn.http.username ?? cred.username, password: cred.password },
+    }
+  })
+}
+
+// One-time + ongoing protection: strip secrets from anything read back from
+// localStorage when a vault-backed secret store owns them (older snapshots
+// persisted them in plaintext).
+export function scrubStoredServerSecrets(value: unknown): unknown {
+  if (!isRecord(value) || !Array.isArray(value.list)) return value
+  const list = value.list.map((entry) => {
+    if (typeof entry === "string" || !isRecord(entry)) return entry
+    const http = isRecord(entry.http) ? entry.http : typeof entry.url === "string" ? entry : undefined
+    if (!http || !("password" in http)) return entry
+    const { password: _password, ...rest } = http
+    const outer = "http" in entry ? { ...entry, http: rest } : rest
+    return outer
+  })
+  return { ...value, list }
 }
 
 export namespace ServerConnection {
@@ -259,11 +297,16 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     defaultServer: ServerConnection.Key
     canonicalLocalServer?: ServerConnection.Key
     servers?: Array<ServerConnection.Any>
+    secrets?: ServerSecrets
   }) => {
+    const secrets = props.secrets
     const [store, setStore, _, ready] = persisted(
       {
         ...Persist.global("server", ["server.v3"]),
-        migrate: (value) => migrateCanonicalLocalServerState(value, props.canonicalLocalServer),
+        migrate: (value) => {
+          const migrated = migrateCanonicalLocalServerState(value, props.canonicalLocalServer)
+          return secrets ? scrubStoredServerSecrets(migrated) : migrated
+        },
       },
       createStore({
         list: [] as StoredServer[],
@@ -275,8 +318,12 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
 
     const url = (x: StoredServer) => (typeof x === "string" ? x : "type" in x ? x.http.url : x.url)
 
+    const [secretMap, setSecretMap] = createStore<Record<string, ServerHttpCreds | undefined>>(
+      secrets?.initial ?? {},
+    )
+
     const allServers = createMemo((): Array<ServerConnection.Any> => {
-      return resolveServerList({ stored: store.list, props: props.servers })
+      return resolveServerList({ stored: store.list, props: props.servers, secrets: secrets ? secretMap : undefined })
     })
 
     const [state, setState] = createStore({
@@ -292,15 +339,30 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       if (!url_) return
       const conn: ServerConnection.Http = { ...input, authToken: undefined, http: { ...input.http, url: url_ } }
       return batch(() => {
+        if (secrets && conn.http.password) {
+          const creds = { username: conn.http.username, password: conn.http.password }
+          setSecretMap(url_, creds)
+          void secrets.save(url_, creds).catch(() => {})
+        }
+        const stored: ServerConnection.Http = secrets
+          ? { ...conn, http: { ...conn.http, password: undefined } }
+          : conn
         const existing = store.list.findIndex((x) => url(x) === url_)
         if (existing !== -1) {
-          setStore("list", existing, conn)
+          setStore("list", existing, stored)
         } else {
-          setStore("list", store.list.length, conn)
+          setStore("list", store.list.length, stored)
         }
         setState("active", ServerConnection.key(conn))
         return conn
       })
+    }
+
+    function saveSecret(url: string, creds: ServerHttpCreds): Promise<void> {
+      const url_ = normalizeServerUrl(url)
+      if (!url_ || !secrets) return Promise.resolve()
+      setSecretMap(url_, creds)
+      return secrets.save(url_, creds)
     }
 
     function remove(key: ServerConnection.Key) {
@@ -309,6 +371,10 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       batch(() => {
         setStore("list", list)
         if (state.active === key) setState("active", next)
+        if (secrets && secretMap[key]) {
+          setSecretMap(key, undefined)
+          void secrets.remove(key).catch(() => {})
+        }
       })
     }
 
@@ -332,8 +398,19 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     )
     const isLocal = createMemo(() => ServerConnection.local(current()))
 
+    // With no explicit default server (fresh boot, cleared storage), activate the
+    // first stored connection once persistence is ready so ServerKey gates open.
+    createEffect(() => {
+      if (!ready()) return
+      if (state.active) return
+      const first = allServers()[0]
+      if (first) setState("active", ServerConnection.key(first))
+    })
+
     return {
       ready: isReady,
+      persistReady: ready,
+      savedCount: createMemo(() => store.list.length),
       isLocal,
       get key() {
         return state.active
@@ -350,6 +427,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       setActive,
       add,
       remove,
+      saveSecret,
       scope,
       projects: {
         ...projects,

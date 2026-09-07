@@ -1,36 +1,28 @@
 // agentio launcher — E2B sandbox management tab (Settings → Cloud).
-// Solid port of `app/web` SandboxPanel + KeysPanel: list/pick/create/boot +
-// pause/resume over the `src/e2b` seam, then registers the serve URL with the
-// existing ServerConnection store (no new server plumbing). E2B runs headless
-// `opencode serve v1.18.27`; this page is only the launcher.
+// Solid port of `app/web` SandboxPanel + KeysPanel over the `src/e2b` seam;
+// shared provisioning logic lives in provision.ts (also used by first-run
+// onboarding). E2B runs headless `opencode serve v1.18.27`; this page is
+// only the launcher.
 import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
 import { TextInputV2 } from "@opencode-ai/ui/v2/text-input-v2"
-import { type Component, For, Show, onMount } from "solid-js"
+import { type Component, For, Show, onCleanup, onMount } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useLanguage } from "@/context/language"
 import { useServer } from "@/context/server"
-import { checkServerHealth } from "@/utils/server-health"
 import { createE2BProvider, waitForServeVersion, type CloudSandbox } from "@/e2b/cloud"
-import { buildAuthContent, clearVault, generatePassword, loadVault, saveVault } from "@/e2b/vault"
+import {
+  bootEnvs,
+  connectServe,
+  createAndBoot,
+  DEFAULT_TEMPLATE,
+  EXPECTED_OPENCODE_VERSION,
+  parseKeys,
+  SERVE_PORT,
+} from "@/e2b/provision"
+import { classifyError, type UserError } from "@/e2b/errors"
+import { clearVault, generatePassword, loadVault, updateVault } from "@/e2b/vault"
 import { SettingsListV2 } from "./parts/list"
 import "./settings-v2.css"
-
-export const EXPECTED_OPENCODE_VERSION = "1.18.27"
-export const DEFAULT_TEMPLATE = "agentio-opencode-v1"
-
-function parseKeys(text: string): Record<string, string> {
-  const out: Record<string, string> = {}
-  for (const line of text.split("\n")) {
-    const trimmed = line.trim()
-    if (!trimmed || trimmed.startsWith("#")) continue
-    const eq = trimmed.indexOf("=")
-    if (eq === -1) continue
-    const provider = trimmed.slice(0, eq).trim()
-    const key = trimmed.slice(eq + 1).trim()
-    if (provider && key) out[provider] = key
-  }
-  return out
-}
 
 export const SettingsE2BV2: Component = () => {
   const language = useLanguage()
@@ -45,27 +37,29 @@ export const SettingsE2BV2: Component = () => {
     sandboxes: [] as CloudSandbox[],
     picked: "",
     busy: false,
-    error: "",
+    error: null as UserError | null,
     progress: "",
     lastUrl: "",
     versionWarning: "",
   })
 
+  const controller = new AbortController()
+  onCleanup(() => controller.abort())
+
   onMount(() => {
     loadVault()
       .then((v) => {
-        if (v && (v.password || v.e2bKey || Object.keys(v.llmKeys).length > 0)) {
-          setStore({
-            e2bKey: v.e2bKey,
-            password: v.password,
-            keysText: Object.entries(v.llmKeys)
-              .map(([p, k]) => `${p}=${k}`)
-              .join("\n"),
-            remember: true,
-          })
-        }
+        if (!v) return
+        setStore({
+          e2bKey: v.e2bKey,
+          password: v.password,
+          keysText: Object.entries(v.llmKeys)
+            .map(([p, k]) => `${p}=${k}`)
+            .join("\n"),
+          remember: !!(v.e2bKey || v.password || Object.keys(v.llmKeys).length > 0),
+        })
       })
-      .catch(() => {})
+      .catch(() => setStore("error", { key: "e2b.error.raw", params: { message: "Vault unavailable on this browser." } }))
   })
 
   function provider() {
@@ -73,41 +67,53 @@ export const SettingsE2BV2: Component = () => {
     return createE2BProvider(store.e2bKey.trim())
   }
 
-  function envs(): Record<string, string> {
-    return {
-      OPENCODE_SERVER_PASSWORD: store.password,
-      OPENCODE_AUTH_CONTENT: buildAuthContent(parseKeys(store.keysText)),
-      AGENTIO_CORS_ORIGINS: window.location.origin,
-    }
+  function envs() {
+    return bootEnvs({
+      devicePassword: store.password,
+      llmKeys: parseKeys(store.keysText),
+      corsOrigins: [window.location.origin],
+    })
   }
 
+  // Merge into the vault so per-server credentials survive alongside the
+  // form's device secrets.
   async function persist() {
     if (!store.remember) return
-    try {
-      await saveVault({ password: store.password, e2bKey: store.e2bKey.trim(), llmKeys: parseKeys(store.keysText) })
-    } catch {}
+    await updateVault((v) => ({
+      ...v,
+      password: store.password || v.password,
+      e2bKey: store.e2bKey.trim() || v.e2bKey,
+      llmKeys: parseKeys(store.keysText),
+    }))
   }
 
   async function connect(url: string) {
-    const conn = { type: "http" as const, http: { url, username: "opencode", password: store.password } }
-    const health = await checkServerHealth(conn.http, globalThis.fetch)
-    if (!health.healthy) {
-      setStore("error", language.t("dialog.server.add.error"))
-      return
+    const result = await connectServe({
+      server,
+      url,
+      username: "opencode",
+      password: store.password,
+      persistSecrets: persist,
+      fetch: globalThis.fetch,
+    })
+    if (!result.ok) {
+      setStore("error", result.error ?? { key: "e2b.error.unreachable" })
+      return false
     }
-    setStore("versionWarning", health.version && health.version !== EXPECTED_OPENCODE_VERSION ? `${health.version}` : "")
-    setStore("lastUrl", url)
-    server.add(conn)
-    void persist()
+    setStore({
+      versionWarning: result.version && result.version !== EXPECTED_OPENCODE_VERSION ? result.version : "",
+      lastUrl: url,
+    })
+    return true
   }
 
   async function list() {
-    setStore({ error: "", busy: true })
+    setStore({ error: null, busy: true })
     try {
       const all = await provider().listSandboxes()
-      setStore({ sandboxes: all, picked: all.length > 0 && !store.picked ? all[0].id : store.picked })
+      setStore({ sandboxes: all, picked: all.some((s) => s.id === store.picked) ? store.picked : (all[0]?.id ?? "") })
     } catch (err) {
-      setStore("error", err instanceof Error ? err.message : String(err))
+      setStore("error", classifyError(err))
     } finally {
       setStore("busy", false)
     }
@@ -117,15 +123,58 @@ export const SettingsE2BV2: Component = () => {
     const meta = store.sandboxes.find((s) => s.id === store.picked)
     if (!meta) return
     if (!store.password) {
-      setStore("error", language.t("settings.e2b.passwordRequired"))
+      setStore("error", { key: "settings.e2b.passwordRequired" })
       return
     }
-    setStore({ error: "", busy: true })
+    setStore({ error: null, busy: true })
     try {
-      const url = await provider().getServeUrl(meta.id, 4096)
+      const url = await provider().getServeUrl(meta.id, SERVE_PORT)
       await connect(url)
     } catch (err) {
-      setStore("error", err instanceof Error ? err.message : String(err))
+      setStore("error", classifyError(err))
+    } finally {
+      setStore("busy", false)
+    }
+  }
+
+  // FS-only pause kills the serve process. Waking = connect (Sandbox.connect
+  // auto-resumes) then re-run boot.sh with vault envs, then wait for health.
+  async function wake() {
+    const meta = store.sandboxes.find((s) => s.id === store.picked)
+    if (!meta || !store.password) {
+      if (!store.password) setStore("error", { key: "settings.e2b.passwordRequired" })
+      return
+    }
+    setStore({ error: null, busy: true, progress: language.t("settings.e2b.progress.starting") })
+    try {
+      const p = provider()
+      const url = await p.getServeUrl(meta.id, SERVE_PORT)
+      await p.startServe(meta.id, envs())
+      await waitForServeVersion(url, { signal: controller.signal })
+      setStore("progress", "")
+      await connect(url)
+      await list()
+    } catch (err) {
+      setStore({ error: classifyError(err), progress: "" })
+    } finally {
+      setStore("busy", false)
+    }
+  }
+
+  async function restartServe() {
+    const meta = store.sandboxes.find((s) => s.id === store.picked)
+    if (!meta || !store.password) return
+    setStore({ error: null, busy: true, progress: language.t("settings.e2b.progress.starting") })
+    try {
+      const p = provider()
+      await p.startServe(meta.id, envs())
+      const url = await p.getServeUrl(meta.id, SERVE_PORT)
+      setStore("progress", language.t("settings.e2b.progress.waiting"))
+      await waitForServeVersion(url, { signal: controller.signal })
+      setStore("progress", "")
+      await connect(url)
+    } catch (err) {
+      setStore({ error: classifyError(err), progress: "" })
     } finally {
       setStore("busy", false)
     }
@@ -133,34 +182,36 @@ export const SettingsE2BV2: Component = () => {
 
   async function create() {
     if (!store.password) {
-      setStore("error", language.t("settings.e2b.passwordRequired"))
+      setStore("error", { key: "settings.e2b.passwordRequired" })
       return
     }
-    setStore({ error: "", busy: true, progress: language.t("settings.e2b.progress.creating") })
+    setStore({ error: null, busy: true, progress: language.t("settings.e2b.progress.creating") })
     try {
-      const p = provider()
-      const created = await p.createSandbox(store.template.trim() || DEFAULT_TEMPLATE, Number(store.timeoutMin) * 60_000)
-      setStore("progress", language.t("settings.e2b.progress.starting"))
-      await p.startServe(created.id, envs())
-      const url = await p.getServeUrl(created.id, 4096)
-      setStore("progress", language.t("settings.e2b.progress.waiting"))
-      await waitForServeVersion(url)
-      setStore({ progress: "", sandboxes: [created, ...store.sandboxes.filter((s) => s.id !== created.id)], picked: created.id })
-      await connect(url)
+      const result = await createAndBoot({
+        provider: provider(),
+        template: store.template.trim() || DEFAULT_TEMPLATE,
+        timeoutMs: Number(store.timeoutMin) * 60_000,
+        envs: envs(),
+        onProgress: (step) =>
+          setStore("progress", language.t(`settings.e2b.progress.${step}` as "settings.e2b.progress.creating")),
+        signal: controller.signal,
+      })
+      setStore({ progress: "", sandboxes: [result.sandbox, ...store.sandboxes.filter((s) => s.id !== result.sandbox.id)], picked: result.sandbox.id })
+      await connect(result.url)
     } catch (err) {
-      setStore({ error: err instanceof Error ? err.message : String(err), progress: "" })
+      setStore({ error: classifyError(err), progress: "" })
     } finally {
       setStore("busy", false)
     }
   }
 
   async function pause(id: string) {
-    setStore({ error: "", busy: true })
+    setStore({ error: null, busy: true })
     try {
       await provider().pauseSandbox(id)
       await list()
     } catch (err) {
-      setStore("error", err instanceof Error ? err.message : String(err))
+      setStore("error", classifyError(err))
     } finally {
       setStore("busy", false)
     }
@@ -168,10 +219,10 @@ export const SettingsE2BV2: Component = () => {
 
   async function forget() {
     setStore({ e2bKey: "", password: "", keysText: "", remember: false })
-    try {
-      await clearVault()
-    } catch {}
+    await clearVault().catch(() => {})
   }
+
+  const pickedMeta = () => store.sandboxes.find((s) => s.id === store.picked)
 
   return (
     <>
@@ -236,9 +287,23 @@ export const SettingsE2BV2: Component = () => {
             <ButtonV2 variant="neutral" disabled={store.busy || !store.e2bKey.trim()} onClick={list}>
               {language.t("settings.e2b.list")}
             </ButtonV2>
-            <ButtonV2 variant="contrast" disabled={store.busy || !store.picked} onClick={useSelected}>
+            <ButtonV2
+              variant="contrast"
+              disabled={store.busy || !store.picked || pickedMeta()?.state !== "running"}
+              onClick={useSelected}
+            >
               {language.t("settings.e2b.use")}
             </ButtonV2>
+            <Show when={pickedMeta()?.state === "running"}>
+              <ButtonV2 variant="neutral" disabled={store.busy} onClick={restartServe}>
+                {language.t("settings.e2b.restartServe")}
+              </ButtonV2>
+            </Show>
+            <Show when={pickedMeta() && pickedMeta()?.state !== "running"}>
+              <ButtonV2 variant="contrast" disabled={store.busy} onClick={wake}>
+                {language.t("settings.e2b.wake")}
+              </ButtonV2>
+            </Show>
             <Show when={store.remember || store.e2bKey || store.password}>
               <ButtonV2 variant="neutral" disabled={store.busy} onClick={forget}>
                 {language.t("settings.e2b.forget")}
@@ -316,7 +381,7 @@ export const SettingsE2BV2: Component = () => {
             </a>
           </Show>
           <Show when={store.error}>
-            <span class="settings-v2-server-dialog-error">{store.error}</span>
+            {(error) => <span class="settings-v2-server-dialog-error">{language.t(error().key, error().params ?? {})}</span>}
           </Show>
         </SettingsListV2>
       </div>

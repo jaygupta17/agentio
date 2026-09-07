@@ -52,7 +52,7 @@ import { NotificationProvider } from "@/context/notification"
 import { PermissionProvider } from "@/context/permission"
 import { usePlatform } from "@/context/platform"
 import { PromptProvider } from "@/context/prompt"
-import { ServerConnection, ServerProvider, serverName, useServer } from "@/context/server"
+import { type ServerSecrets, ServerConnection, ServerProvider, serverName, useServer } from "@/context/server"
 import { SettingsProvider, useSettings } from "@/context/settings"
 import { TabsProvider, useTabs, type DraftTab } from "@/context/tabs"
 import { SDKProvider, useSDK } from "@/context/sdk"
@@ -554,6 +554,20 @@ function ServerKey(props: ParentProps) {
   )
 }
 
+// agentio: with nothing ever connected (and no server handed in via props),
+// the router would render a dead shell — show the first-run screen instead.
+function NoServerGate(props: ParentProps<{ noServer?: JSX.Element; injected?: boolean }>) {
+  const server = useServer()
+  return (
+    <Show
+      when={props.injected || !server.persistReady() || server.savedCount() > 0 || !props.noServer}
+      fallback={props.noServer}
+    >
+      {props.children}
+    </Show>
+  )
+}
+
 export function AppInterface(props: {
   children?: JSX.Element
   defaultServer: ServerConnection.Key
@@ -563,6 +577,8 @@ export function AppInterface(props: {
   disableHealthCheck?: boolean
   startup?: Promise<void>
   serverScoped?: JSX.Element
+  noServer?: JSX.Element
+  secrets?: ServerSecrets
 }) {
   // The visual new layout lives in the router root so it remains mounted across
   // route changes. Draft and session routes override only their server-bound data
@@ -581,10 +597,12 @@ export function AppInterface(props: {
       defaultServer={props.defaultServer}
       canonicalLocalServer={props.canonicalLocalServer}
       servers={props.servers}
+      secrets={props.secrets}
     >
       <GlobalProvider>
         <SettingsProvider>
           <ConnectionGate disableHealthCheck={props.disableHealthCheck} startup={props.startup}>
+            <NoServerGate noServer={props.noServer} injected={!!props.servers?.length}>
             <Show when={useSettings().general.newLayoutDesigns().toString()} keyed>
               <Dynamic
                 component={props.router ?? Router}
@@ -605,6 +623,7 @@ export function AppInterface(props: {
                 <Routes serverScoped={props.serverScoped} />
               </Dynamic>
             </Show>
+            </NoServerGate>
           </ConnectionGate>
         </SettingsProvider>
       </GlobalProvider>

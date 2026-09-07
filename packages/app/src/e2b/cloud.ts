@@ -139,27 +139,39 @@ export function createE2BProvider(apiKey: string): CloudProvider {
 /**
  * Poll unauthenticated /global/health until serve answers with a version.
  * Used after create/start-serve and after FS-only resume (cold boot takes a
- * while). Throws the last error on timeout.
+ * while). Cancellable via signal; throws the last error on timeout.
  */
 export async function waitForServeVersion(
   baseUrl: string,
-  timeoutMs = 90000,
-  intervalMs = 2000,
+  opts: { timeoutMs?: number; intervalMs?: number; signal?: AbortSignal } = {},
 ): Promise<string> {
+  const { timeoutMs = 90000, intervalMs = 2000, signal } = opts
   const root = baseUrl.replace(/\/$/, "")
   const start = Date.now()
   let lastErr: unknown = new Error("serve did not come up in time")
   while (Date.now() - start < timeoutMs) {
+    if (signal?.aborted) throw new DOMException("Aborted", "AbortError")
     try {
-      const res = await fetch(`${root}/global/health`)
+      const res = await fetch(`${root}/global/health`, { signal })
       if (res.ok) {
         const body = (await res.json()) as { version?: unknown }
         if (typeof body.version === "string" && body.version) return body.version
       }
     } catch (err) {
+      if (signal?.aborted) throw err
       lastErr = err
     }
-    await new Promise((r) => setTimeout(r, intervalMs))
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(resolve, intervalMs)
+      signal?.addEventListener(
+        "abort",
+        () => {
+          clearTimeout(timer)
+          reject(new DOMException("Aborted", "AbortError"))
+        },
+        { once: true },
+      )
+    })
   }
   throw lastErr instanceof Error ? lastErr : new Error("serve did not come up in time")
 }

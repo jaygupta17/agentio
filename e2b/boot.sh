@@ -29,10 +29,13 @@ declare -A _SEEN_ORIGIN=()
 if [ -n "${AGENTIO_CORS_ORIGINS:-}" ]; then
   IFS=',' read -ra ORIGINS <<< "$AGENTIO_CORS_ORIGINS"
   for raw in "${ORIGINS[@]}"; do
-    origin="$(echo "$raw" | xargs)"
+    # trim surrounding whitespace without xargs (quote/backslash surprises)
+    origin="${raw#"${raw%%[![:space:]]*}"}"
+    origin="${origin%"${origin##*[![:space:]]}"}"
     [ -z "$origin" ] && continue
-    if [[ ! "$origin" =~ ^https://[A-Za-z0-9.-]+(:[0-9]+)?$ ]]; then
-      echo "agentio: rejecting bad CORS origin '$origin' (want https://host[:port])" >&2
+    # https anywhere; http only for loopback; native app shell webview origins
+    if [[ ! "$origin" =~ ^(https://[A-Za-z0-9.-]+(:[0-9]+)?|http://(localhost|127\.0\.0\.1)(:[0-9]+)?|(tauri|capacitor)://localhost|http://tauri\.localhost)$ ]]; then
+      echo "agentio: rejecting bad CORS origin '$origin'" >&2
       exit 1
     fi
     if [ -z "${_SEEN_ORIGIN[$origin]:-}" ]; then

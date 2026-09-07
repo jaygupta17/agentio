@@ -9,6 +9,8 @@ import { createBrowserDraftStore } from "@/utils/draft-store"
 import { dict as en } from "@/i18n/en"
 import { dict as zh } from "@/i18n/zh"
 import { authFromToken } from "@/utils/server"
+import { OnboardingScreen } from "@/components/onboarding"
+import { loadServerSecrets, serverSecretStore } from "@/e2b/server-secrets"
 import pkg from "../package.json"
 import { ServerConnection } from "./context/server"
 
@@ -103,12 +105,6 @@ const getCurrentUrl = () => {
   return location.origin
 }
 
-const getDefaultUrl = () => {
-  const lsDefault = readDefaultServerUrl()
-  if (lsDefault) return lsDefault
-  return getCurrentUrl()
-}
-
 const clearAuthToken = () => {
   const params = new URLSearchParams(location.search)
   if (!params.has("auth_token")) return
@@ -150,26 +146,41 @@ if (import.meta.env.VITE_SENTRY_DSN) {
 }
 
 if (root instanceof HTMLElement) {
-  void loadInitialLocale().then((locale) => {
-    const auth = authFromToken(new URLSearchParams(location.search).get("auth_token"))
+  void Promise.all([loadInitialLocale(), loadServerSecrets()]).then(([locale, secrets]) => {
+    const params = new URLSearchParams(location.search)
+    const auth = authFromToken(params.get("auth_token"))
     clearAuthToken()
+    // agentio: never invent a server. Upstream injected same-origin/localhost
+    // and skipped health checks, which hid "nothing connected" as a broken
+    // shell. Dev mode keeps its conventional localhost target (bypass with
+    // ?onboard to exercise first-run UX), production starts from the vault +
+    // persisted server list only, and ConnectionGate stays live.
+    const injectLocal = !params.has("onboard") && (import.meta.env.DEV || !!auth)
     const server: ServerConnection.Http = {
       type: "http",
       authToken: !!auth,
       http: {
         url: getCurrentUrl(),
-        ...auth,
+        ...(auth ?? {}),
       },
     }
+    const savedDefault = readDefaultServerUrl()
+    const secretStore = serverSecretStore()
     render(
       () => (
         <PlatformProvider value={platform}>
           <AppBaseProviders locale={locale}>
-            <AppInterface
-              defaultServer={ServerConnection.Key.make(getDefaultUrl())}
-              canonicalLocalServer={ServerConnection.key(server)}
-              servers={[server]}
-              disableHealthCheck
+              <AppInterface
+                defaultServer={ServerConnection.Key.make(savedDefault ?? "")}
+                {...(injectLocal
+                  ? { canonicalLocalServer: ServerConnection.key(server), servers: [server], disableHealthCheck: true }
+                  : {})}
+              secrets={{
+                initial: secrets,
+                save: (url, creds) => secretStore.save(url, creds),
+                remove: (url) => secretStore.remove(url),
+              }}
+              noServer={<OnboardingScreen />}
             />
           </AppBaseProviders>
         </PlatformProvider>
