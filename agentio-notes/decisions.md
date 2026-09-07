@@ -187,3 +187,8 @@ Log newest first. One line why per decision.
   live; dev/auth_token keep injected+unhealthy-skipped path so upstream
   e2e semantics hold. boot.sh now accepts localhost + tauri://localhost +
   capacitor://localhost origins. 747 unit / 41 browser / build green.
+
+- 2026-09-07: production bundle passes the full first-run flow against an
+  authenticated local serve (vite preview 4173 -> connect -> app shell,
+  persists across reload). localhost origins pass v1.18.27 CORS defaults;
+  non-localhost launchers still need AGENTIO_CORS_ORIGINS at boot.

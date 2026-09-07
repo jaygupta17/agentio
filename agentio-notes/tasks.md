@@ -12,6 +12,8 @@
 
 ## Phase 2 — make it the actual product
 - [x] entry.tsx: no fake server in prod; ConnectionGate live (dev/auth_token keep injected path)
+- [x] Prod-bundle smoke: vite preview (4173) + serve w/ OPENCODE_SERVER_PASSWORD →
+      first-run screen → manual connect → app shell; reload keeps session
 - [x] First-run onboarding gate: E2B wizard + remote serve form (verified in Chrome against real serve)
 - [x] Vault-only secrets: scrub read + strip write + vault.servers hydrate (live-verified: no password in localStorage)
 - [ ] Replace safe-read catch-all with real connection-state gate
