@@ -157,3 +157,18 @@ Log newest first. One line why per decision.
 - Skeletons (sessions/chat/files/config), designed empty sessions card
   with action, token-styled banners. Onboarding Dialog wizard (E2B key
   → model key → launch → done) with full stub-driven tests. Suite: 115.
+
+# (canonical decision log moved here from the umbrella repo)
+
+- 2026-09-07: launcher home = this fork (jaygupta17/agentio, branch `agentio`
+  off tag v1.18.27). `app/launcher` copy-fork transplanted as 3 logical
+  commits; `launcher-ws` shim workspace + `app/ui`/`app/desktop` symlinks
+  deleted (were machine-specific, skipped upstream patches, absolute paths).
+  Verified in fork: bun install 4713 pkgs, tsgo green, unit 723/724
+  (pa-PK = pre-existing upstream red), browser 41/41, vite build green 86M.
+- 2026-09-07: @pierre/trees onExpansionChange shim REVERTED — the upstream
+  patch for beta.4 adds it; the old shim workspace silently skipped all 18
+  patchedDependencies, which is why the hack looked necessary. Live patched
+  deps now match the pinned build contract.
+- 2026-09-07: E2B template + boot.sh landed at `e2b/` (verbatim from
+  app/template; CORS/localhost + digest-pin fixes scheduled in Phase 3).
