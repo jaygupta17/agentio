@@ -1,14 +1,42 @@
 # agentio — tasks
 
-- [x] Analyse `opencode/` reference (server, SDK, sessions, agents, tools, config, auth)
-- [x] Analyse `openchamber/` reference (frontend arch, components, server wiring)
-- [x] Finalise build plan from analysis (template + PWA + config manager)
-- [x] Phase 0: E2B template (pinned opencode, boot script, password + AUTH_CONTENT)
-- [x] Phase 1: PWA core (connect, sessions, chat, approvals, diffs, files)
-- [x] Phase 2: config manager (agents CRUD, per-agent perms/skills/MCPs, plugins)
-- [x] Phase 3: vault + keys + start-serve + E2B list/connect/pause/create
-- [x] Wave 0–2 hardening (SSE kill, pagination, error unions, tuples, races, P1 sweep)
-- [x] Wave 3a: stub bench (fixtures, StubEngine/Cloud, ?stub=full|empty|errors)
-- [x] Wave 3b: component suite over stubs (95 tests green)
-- [x] Polish: offline cache, .md authoring via E2B files, ruins (zustand, e2b split, icons)
-- [ ] Acceptance (Jay): template build, boot, pick/connect/pause/resume, .md round-trip, CORS origin
+## Done (2026-09-07 recovery)
+- [x] Baseline git snapshot of old umbrella repo (pre-migration, byte-exact)
+- [x] Launcher transplanted into this fork: branch `agentio` off `v1.18.27`,
+      E2B layer + cold-boot guards as reviewable commits
+- [x] Real build verified in fork: install + typecheck + 723/724 unit
+      (known upstream red: pa-PK Intl) + 41/41 browser + vite build
+- [x] launcher-ws shim workspace + app/ui + app/desktop symlinks deleted
+- [x] @pierre/trees compat shim reverted (upstream patch provides hook)
+- [x] E2B template moved to `e2b/`
+
+## Phase 2 — make it the actual product
+- [ ] entry.tsx: stop injecting fake same-origin/localhost server;
+      enable ConnectionGate health check
+- [ ] First-run onboarding gate: E2B path + "connect remote serve" path
+      (URL + username + password, cross-origin tested)
+- [ ] Vault-only secrets: strip password from persisted server.v3,
+      hydrate from vault, one-time migration
+- [ ] Replace safe-read catch-all with real connection-state gate
+- [ ] Port toUserError/redactSecrets + SSE fatal-vs-reconnect from web
+- [ ] CORS: onboarding collects allowed origins; native-shell origins
+      (tauri://localhost, capacitor://localhost) in the design
+
+## Phase 3 — E2B lifecycle
+- [ ] Restart-serve after FS-only pause (explicit affordance)
+- [ ] AbortSignal + backoff in waitForServeVersion poll
+- [ ] Normalize URL before server.add (dedup); persist secrets before connect
+- [ ] boot.sh: allow http://localhost + native origins; pin Dockerfile digest
+- [ ] Regenerate vendored @opencode-ai/client at next pin bump
+
+## Phase 4 — acceptance (Jay, real device)
+- [ ] Fresh profile → onboard E2B → chat → pause → resume+restart-serve
+- [ ] Manual connect LAN serve from phone Safari
+- [ ] Approvals + files + config round-trip cross-origin
+
+## Deferred
+- Offline cache, PWA push, share feature, Tauri spike, V1_API_MIGRATION
+  remainder (do at next pin bump), mobile/Expo.
+
+## Historical (umbrella repo, pre-migration) — archived
+Phase 0-3 + waves 0-3 + U1-U4: see git log of the umbrella repo.
