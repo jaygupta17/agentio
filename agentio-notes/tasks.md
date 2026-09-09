@@ -24,7 +24,7 @@
 - [x] Phase A: data layer (api, permission model, codecs, jailed files, bindings, reload queue)
 - [x] Phase B: page shell + permissions + agents/subagents + commands + MCP (+ live smoke on isolated serve)
 - [x] Phase C: skills (browse everywhere, CRUD on E2B) + plugins + providers deep-link
-- [ ] Phase D (Jay, real E2B sandbox): agent .md mirror, deletes, SKILL.md authoring,
+- [ ] Phase D (Jay, real E2B sandbox — see TEST-SERVER-CONFIG.md §§3-4): agent .md mirror, deletes, SKILL.md authoring,
       project scope, restart badge → dispose, then GET /agent reflects file edits
 - [ ] Backlog: MCP OAuth round-trip UI, raw JSONC config editor, Playwright regression
       spec for the config page, project AGENTS.md/rules editor
